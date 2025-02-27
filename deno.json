@@ -1,0 +1,22 @@
+{
+  "name": "@garciat/libs",
+  "version": "0.0.1",
+  "exports": {
+    "./cgi": "./cgi/mod.ts",
+    "./http": "./http/mod.ts",
+    "./other": "./other/mod.ts",
+    "./supervisord-client": "./supervisord-client/mod.ts",
+    "./xml-rpc-client": "./xml-rpc-client/mod.ts"
+  },
+  "imports": {
+    "@libs/xml": "jsr:@libs/xml@^6.0.4",
+    "@oak/oak": "jsr:@oak/oak@^17.1.4",
+    "@std/assert": "jsr:@std/assert@^1.0.11",
+    "@std/bytes": "jsr:@std/bytes@^1.0.5",
+    "@std/encoding": "jsr:@std/encoding@^1.0.7",
+    "@std/http": "jsr:@std/http@^1.0.13",
+    "google-auth-library": "npm:google-auth-library@^9.15.1",
+    "preact": "npm:preact@^10.26.3",
+    "preact-render-to-string": "npm:preact-render-to-string@^6.5.13"
+  }
+}
