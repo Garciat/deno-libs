@@ -1,15 +1,15 @@
-import { methodCall } from "../xml-rpc-client/json.ts";
-import { XmlRpcClient } from "../xml-rpc-client/mod.ts";
 import {
   array,
   boolean,
   booleanTrue,
   i4,
+  methodCall,
   oneOf,
   string,
   struct,
   tuple,
-} from "../xml-rpc-client/schema.ts";
+  type XmlRpcClient,
+} from "../xml-rpc-client/mod.ts";
 
 /**
  * @see https://supervisord.org/api.html
