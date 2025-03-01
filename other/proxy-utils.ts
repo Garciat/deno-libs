@@ -1,11 +1,10 @@
 import { parseResponseFromStream, writeRequestToStream } from "../http/mod.ts";
 
-import { Handler } from "./http-utils.ts";
+import type { Handler } from "./http-utils.ts";
 
 export function plainConnectionHTTPProxy(options: {
   basepath: string;
   connect: () => Promise<Deno.Conn>;
-  postWriteAction?: (req: Request) => Promise<void>;
 }): Handler {
   function makeProxyRequest(orig: Request) {
     const url = new URL(orig.url);
@@ -35,13 +34,14 @@ export function plainConnectionHTTPProxy(options: {
     const proxyRequest = makeProxyRequest(req);
 
     await writeRequestToStream(proxyRequest, conn.writable);
-    await options.postWriteAction?.(req);
 
     const response = await parseResponseFromStream(conn.readable);
 
     if (response.headers.has("Location")) {
       const url = new URL(response.headers.get("Location")!);
-      url.pathname = options.basepath + url.pathname;
+      if (!url.pathname.startsWith(options.basepath)) {
+        url.pathname = options.basepath + url.pathname;
+      }
       response.headers.set("Location", url.toString());
     }
 
