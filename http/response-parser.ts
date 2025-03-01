@@ -27,22 +27,16 @@ class ResponseDecoder {
     const { status, statusText } = await this.decodeStatusLine();
     const headers = await this.decodeHeaders();
 
-    if (headers.get("transfer-encoding") === "chunked") {
-      const stream = this.chunkedBodyStream((trailers) => {
-        this.#reader.releaseLock();
-        if (Array.from(trailers.keys()).length > 0) {
-          // https://github.com/whatwg/fetch/issues/981
-          throw new Error("trailers not supported");
-        }
-      });
-      return new Response(stream, { status, statusText, headers });
-    } else if (headers.has("content-length")) {
-      const contentLength = parseInt(headers.get("content-length")!);
-      const body = await this.read(contentLength);
-      this.#reader.releaseLock();
-      return new Response(body, { status, statusText, headers });
+    const bodyStream = this.decodeBody(headers);
+
+    if (isNoBodyStatus(status)) {
+      const body = await readAllStream(bodyStream);
+      if (body.byteLength !== 0) {
+        throw new Error("unexpected body");
+      }
+      return new Response(null, { status, statusText, headers });
     } else {
-      throw new Error("unknown body encoding");
+      return new Response(bodyStream, { status, statusText, headers });
     }
   }
 
@@ -65,6 +59,54 @@ class ResponseDecoder {
     }
   }
 
+  private decodeBody(
+    headers: Headers,
+  ): ReadableStream<Uint8Array> {
+    if (headers.get("transfer-encoding") === "chunked") {
+      return this.chunkedBodyStream((trailers) => {
+        if (Array.from(trailers.keys()).length > 0) {
+          // https://github.com/whatwg/fetch/issues/981
+          throw new Error("trailers not supported");
+        }
+      });
+    } else if (headers.has("content-length")) {
+      const contentLength = parseInt(headers.get("content-length")!);
+      if (isNaN(contentLength)) {
+        throw new Error("invalid content-length");
+      }
+      return this.fixedBodyStream(contentLength);
+    } else {
+      throw new Error("unknown body encoding");
+    }
+  }
+
+  private fixedBodyStream(contentLength: number): ReadableStream<Uint8Array> {
+    let remaining = contentLength;
+
+    return new ReadableStream<Uint8Array>({
+      pull: async (controller) => {
+        if (this.currentChunkConsumed) {
+          await this.loadChunk();
+        }
+
+        const chunk = this.readCurrentChunk();
+
+        if (chunk.byteLength > remaining) {
+          throw new Error("unexpected body length");
+        }
+
+        remaining -= chunk.byteLength;
+
+        controller.enqueue(chunk);
+
+        if (remaining === 0) {
+          this.#reader.releaseLock();
+          controller.close();
+        }
+      },
+    });
+  }
+
   private chunkedBodyStream(
     onDone: (trailers: Headers) => void,
   ): ReadableStream<Uint8Array> {
@@ -74,6 +116,7 @@ class ResponseDecoder {
 
         if (chunkSize === 0) {
           const trailers = await this.decodeHeaders();
+          this.#reader.releaseLock();
           controller.close();
           return onDone(trailers);
         }
@@ -118,6 +161,13 @@ class ResponseDecoder {
   private async read(n: number): Promise<Uint8Array> {
     const start = this.tell();
     await this.consumeN(n);
+    const end = this.tell();
+    return this.concat(start, end);
+  }
+
+  private readCurrentChunk(): Uint8Array {
+    const start = this.tell();
+    this.advance(this.bytesUnread);
     const end = this.tell();
     return this.concat(start, end);
   }
@@ -281,4 +331,18 @@ function parseResponseStatusLine(line: string) {
   const [, statusCode, statusText] = match;
 
   return { status: parseInt(statusCode), statusText };
+}
+
+async function readAllStream(
+  stream: ReadableStream<Uint8Array>,
+): Promise<Uint8Array> {
+  const chunks: Uint8Array[] = [];
+  for await (const chunk of stream) {
+    chunks.push(chunk);
+  }
+  return concat(chunks);
+}
+
+function isNoBodyStatus(status: number): boolean {
+  return [204, 205, 304].includes(status);
 }
